@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="RouteScope is a Cisco show ip route semantic diff tool that runs entirely in the browser.">
+  <title>RouteScope</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="hero">
+    <h1>RouteScope</h1>
+    <p class="hero-text">Cisco IOS / IOS-XE / NX-OS の基本的な IPv4 経路表を構造化し、VRF・prefix・protocol・AD/metric・next-hop/interface 単位で比較します。</p>
+    <div class="privacy-note" role="note"><span aria-hidden="true">入力データはブラウザ内だけで処理されます。サーバ送信、外部API、analytics、CDN、自動保存は使いません。</span></div>
+  </header>
+
+  <main>
+    <section class="panel" aria-labelledby="inputTitle">
+      <div class="section-header">
+        <div>
+          <h2 id="inputTitle">Input</h2>
+          <p>Before / After の <code>show ip route</code> 出力を貼り付けてください。</p>
+        </div>
+      </div>
+      <div class="input-grid">
+        <div>
+          <label for="beforeInput">Before: 変更前 show ip route</label>
+          <textarea id="beforeInput" spellcheck="false" placeholder="show ip route または show ip route vrf all の出力"></textarea>
+        </div>
+        <div>
+          <label for="afterInput">After: 変更後 show ip route</label>
+          <textarea id="afterInput" spellcheck="false" placeholder="show ip route または show ip route vrf all の出力"></textarea>
+        </div>
+      </div>
+      <div class="actions">
+        <button id="parseBtn" class="primary" type="button">Parse &amp; Diff</button>
+        <button id="clearBtn" class="secondary" type="button">Clear</button>
+        <button id="sampleBtn" class="secondary" type="button">Load Sample</button>
+      </div>
+    </section>
+
+    <section id="resultsPanel" hidden>
+      <section class="panel" aria-labelledby="summaryTitle">
+        <div class="section-header">
+          <div>
+            <h2 id="summaryTitle">Summary</h2>
+            <p>Added / Removed / Changed / Unchanged を VRF-aware に集計します。</p>
+          </div>
+        </div>
+        <div id="summaryCards" class="metrics" aria-live="polite"></div>
+      </section>
+
+      <section class="panel" aria-labelledby="vrfSummaryTitle">
+        <div class="section-header"><h2 id="vrfSummaryTitle">VRF Summary</h2></div>
+        <div class="table-wrap compact-table">
+          <table>
+            <thead><tr><th scope="col">VRF</th><th scope="col">Added</th><th scope="col">Removed</th><th scope="col">Changed</th><th scope="col">Unchanged</th></tr></thead>
+            <tbody id="vrfSummaryBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="filtersTitle">
+        <div class="section-header"><h2 id="filtersTitle">Filters</h2></div>
+        <div class="filters">
+          <div><label for="filterVrf">VRF</label><select id="filterVrf"><option value="all">All VRFs</option></select></div>
+          <div><label for="filterType">Change type</label><select id="filterType"><option value="all">All types</option><option value="added">Added</option><option value="removed">Removed</option><option value="changed">Changed</option><option value="unchanged">Unchanged</option></select></div>
+          <div><label for="filterProtocol">Protocol</label><select id="filterProtocol"><option value="all">All protocols</option></select></div>
+          <div><label for="filterPrefix">Prefix search</label><input id="filterPrefix" type="search" placeholder="198.51.100.0/24"></div>
+          <div><label for="filterNextHop">Next-hop search</label><input id="filterNextHop" type="search" placeholder="192.0.2.1"></div>
+          <div><label for="filterInterface">Interface search</label><input id="filterInterface" type="search" placeholder="Vlan10"></div>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="diffTitle">
+        <div class="section-header">
+          <div><h2 id="diffTitle">Diff Results</h2><p id="resultCount"></p></div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th scope="col">Type</th><th scope="col">VRF</th><th scope="col">Prefix</th><th scope="col">Protocol</th><th scope="col">Before</th><th scope="col">After</th></tr></thead>
+            <tbody id="diffBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="warningsTitle">
+        <div class="section-header"><h2 id="warningsTitle">Parse Warnings</h2></div>
+        <ol id="warningsList" class="warnings"></ol>
+      </section>
+
+      <section class="panel" aria-labelledby="exportTitle">
+        <div class="section-header"><h2 id="exportTitle">Export</h2></div>
+        <div class="export-actions">
+          <button id="copyMarkdownBtn" type="button">Copy summary as Markdown</button>
+          <button id="downloadCsvBtn" type="button">Download CSV</button>
+          <button id="downloadJsonBtn" type="button">Download JSON</button>
+          <button id="downloadRoutesBtn" type="button">Download normalized routes JSON</button>
+        </div>
+        <p id="copyStatus" class="copy-status" role="status" aria-live="polite"></p>
+      </section>
+    </section>
+  </main>
+
+  <footer>
+    <span>RouteScope runs entirely in your browser. No route data is uploaded, stored, or tracked.</span>
+    <span>Built by <a href="https://github.com/yasu-oh" target="_blank" rel="noopener noreferrer">yasu-oh</a>.</span>
+  </footer>
+
+  <script src="parser.js"></script>
+  <script src="diff.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
