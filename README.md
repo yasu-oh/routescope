@@ -1,28 +1,62 @@
 # RouteScope
 
-Cisco `show ip route` の意味的 diff ツールです。
+Cisco `show ip route` の出力を、VRF・prefix・protocol・next-hop 単位で比較するための diff ツールです。
 
-このツールは GitHub Pages で公開できる完全クライアントサイド Web アプリです。貼り付けた経路表データを外部へ送信・保存・解析しません。
+単純なテキスト diff では見づらい経路表の差分を、ネットワークエンジニアが確認しやすい形に整理します。
 
-## Supported
+## Site
 
-- Cisco IOS / IOS-XE の基本的な `show ip route`
-- `show ip route vrf <VRF名>`
-- `show ip route vrf all`
-- `show ip route vrf *` and prompted captures such as `DEVICE#show ip route vrf *`
-- Prompted `show p ip route vrf *` captures, such as `DEVICE#show p ip route vrf *`
-- NX-OS 風の `IP Route Table for VRF "<name>"` ヘッダ
-- IPv4
-- VRF 単位の diff
-- ECMP next-hop の集合比較
-- connected / local / static / OSPF / BGP の基本形式
-- Cisco IOS の `x.x.x.x/<len> is subnetted` 親行に続く `/prefixlen` 省略経路
+https://yasu-oh.github.io/routescope/
+
+## Features
+
+* Cisco `show ip route` 出力の意味的 diff
+* VRF 単位の比較
+* prefix 単位の追加・削除・変更検出
+* ECMP next-hop の集合比較
+* connected / local / static / OSPF / BGP の基本形式に対応
+* 完全クライアントサイド処理
+* GitHub Pages で静的ホスティング可能
+
+## Supported input
+
+* Cisco IOS / IOS-XE の基本的な `show ip route`
+* `show ip route vrf <VRF名>`
+* `show ip route vrf all`
+* `show ip route vrf *`
+* `DEVICE#show ip route vrf *` のようなプロンプト付き出力
+* `DEVICE#show p ip route vrf *` のような省略コマンドのプロンプト付き出力
+* NX-OS 風の `IP Route Table for VRF "<name>"` ヘッダ
+* IPv4 経路
+* Cisco IOS の `x.x.x.x/<len> is subnetted` 親行に続く `/prefixlen` 省略経路
+
+## Not supported
+
+現時点では、以下は主な対象外です。
+
+* IPv6 経路
+* MPLS / VPNv4 / VPNv6 経路
+* multicast routing table
+* platform 固有の詳細属性すべての完全解析
+* vendor 横断の route table diff
 
 ## Privacy and security
 
-- 入力された `show ip route` はブラウザ内だけで処理します
-- サーバへ送信しません
-- 外部 API を使いません
-- analytics を入れていません
-- CDN を使っていません
-- `localStorage` へ自動保存しません
+RouteScope はブラウザ内だけで処理を行う静的 Web アプリです。
+
+* 入力された `show ip route` をサーバへ送信しません
+* 外部 API を使用しません
+* analytics を入れていません
+* CDN を使用していません
+* `localStorage` へ自動保存しません
+
+貼り付けた経路表データは、利用中のブラウザ上でのみ解析されます。
+
+## Use cases
+
+* 作業前後の routing table 比較
+* VRF ごとの経路差分確認
+* OSPF / BGP / static / connected 経路の変化確認
+* ECMP next-hop の増減確認
+* 障害対応時の経路変化の整理
+* config 変更・メンテナンス後の確認
