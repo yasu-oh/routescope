@@ -7,7 +7,7 @@
     diff: null,
     filters: {
       vrf: 'all',
-      type: 'all',
+      type: 'non-unchanged',
       protocol: 'all',
       prefix: '',
       nextHop: '',
@@ -129,7 +129,8 @@
     readFilters();
     return state.diff.results.filter(function (item) {
       if (state.filters.vrf !== 'all' && item.vrf !== state.filters.vrf) return false;
-      if (state.filters.type !== 'all' && item.type !== state.filters.type) return false;
+      if (state.filters.type === 'non-unchanged' && item.type === 'unchanged') return false;
+      if (state.filters.type !== 'all' && state.filters.type !== 'non-unchanged' && item.type !== state.filters.type) return false;
       if (state.filters.protocol !== 'all' && item.protocol !== state.filters.protocol) return false;
       if (!matchesRouteSearch(item, 'prefix', state.filters.prefix)) return false;
       if (!matchesRouteSearch(item, 'nextHop', state.filters.nextHop)) return false;

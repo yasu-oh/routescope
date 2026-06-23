@@ -33,9 +33,9 @@
         </div>
       </div>
       <div class="actions">
-        <button id="parseBtn" class="primary" type="button">Parse &amp; Diff</button>
-        <button id="clearBtn" class="secondary" type="button">Clear</button>
-        <button id="sampleBtn" class="secondary" type="button">Load Sample</button>
+        <button id="parseBtn" class="primary" type="button">Diff 実行</button>
+        <button id="clearBtn" class="secondary" type="button">クリア</button>
+        <button id="sampleBtn" class="secondary" type="button">サンプル読み込み</button>
       </div>
     </section>
 
@@ -44,7 +44,7 @@
         <div class="section-header">
           <div>
             <h2 id="summaryTitle">Summary</h2>
-            <p>Added / Removed / Changed / Unchanged を VRF-aware に集計します。</p>
+            <p>Added / Removed / Changed / Unchanged を集計します。</p>
           </div>
         </div>
         <div id="summaryCards" class="metrics" aria-live="polite"></div>
@@ -64,7 +64,7 @@
         <div class="section-header"><h2 id="filtersTitle">Filters</h2></div>
         <div class="filters">
           <div><label for="filterVrf">VRF</label><select id="filterVrf"><option value="all">All VRFs</option></select></div>
-          <div><label for="filterType">Change type</label><select id="filterType"><option value="all">All types</option><option value="added">Added</option><option value="removed">Removed</option><option value="changed">Changed</option><option value="unchanged">Unchanged</option></select></div>
+          <div><label for="filterType">Change type</label><select id="filterType"><option value="all">All types</option><option value="non-unchanged" selected>Except Unchanged</option><option value="added">Added</option><option value="removed">Removed</option><option value="changed">Changed</option><option value="unchanged">Unchanged</option></select></div>
           <div><label for="filterProtocol">Protocol</label><select id="filterProtocol"><option value="all">All protocols</option></select></div>
           <div><label for="filterPrefix">Prefix search</label><input id="filterPrefix" type="search" placeholder="198.51.100.0/24"></div>
           <div><label for="filterNextHop">Next-hop search</label><input id="filterNextHop" type="search" placeholder="192.0.2.1"></div>
