@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="RouteScope is a Cisco show ip route semantic diff tool that runs entirely in the browser.">
+  <meta name="description" content="RouteScope is a Cisco IPv4/IPv6 route semantic diff tool that runs entirely in the browser.">
   <title>RouteScope</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header class="hero">
     <h1>RouteScope</h1>
-    <p class="hero-text">Cisco IOS / IOS-XE / NX-OS の基本的な IPv4 経路表を構造化し、VRF・prefix・protocol・AD/metric・next-hop/interface 単位で比較します。</p>
+    <p class="hero-text">Cisco IOS / IOS-XE / NX-OS の基本的な IPv4 / IPv6 経路表を構造化し、VRF・prefix・protocol・AD/metric・next-hop/interface 単位で比較します。</p>
     <div class="privacy-note" role="note"><span aria-hidden="true">入力データはブラウザ内だけで処理されます。サーバ送信、外部API、analytics、CDN、自動保存は使いません。</span></div>
   </header>
 
@@ -19,17 +19,17 @@
       <div class="section-header">
         <div>
           <h2 id="inputTitle">Input</h2>
-          <p>Before / After の <code>show ip route</code> 出力を貼り付けてください。</p>
+          <p>Before / After の <code>show ip route</code> または <code>show ipv6 route</code> 出力を貼り付けてください。</p>
         </div>
       </div>
       <div class="input-grid">
         <div>
-          <label for="beforeInput">Before: 変更前 show ip route</label>
-          <textarea id="beforeInput" spellcheck="false" placeholder="show ip route または show ip route vrf all の出力"></textarea>
+          <label for="beforeInput">Before: 変更前 show ip route / show ipv6 route</label>
+          <textarea id="beforeInput" spellcheck="false" placeholder="show ip route / show ipv6 route / show ip route vrf all の出力"></textarea>
         </div>
         <div>
-          <label for="afterInput">After: 変更後 show ip route</label>
-          <textarea id="afterInput" spellcheck="false" placeholder="show ip route または show ip route vrf all の出力"></textarea>
+          <label for="afterInput">After: 変更後 show ip route / show ipv6 route</label>
+          <textarea id="afterInput" spellcheck="false" placeholder="show ip route / show ipv6 route / show ip route vrf all の出力"></textarea>
         </div>
       </div>
       <div class="actions">
