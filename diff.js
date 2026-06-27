@@ -1,30 +1,32 @@
 (function (global) {
   'use strict';
 
+  var SCALAR_CHANGES = [
+    ['protocol', 'protocol'],
+    ['routeType', 'route type'],
+    ['adminDistance', 'administrative distance'],
+    ['metric', 'metric'],
+    ['isDefaultCandidate', 'default candidate flag']
+  ];
+
+  function joinKey(parts) {
+    return parts.map(function (part) { return part === null || part === undefined ? '' : part; }).join('|');
+  }
+
   function routeIdentityKey(route) {
-    return [route.vrf, route.afi, route.prefix, route.protocol, route.routeType].join('|');
+    return joinKey([route.vrf, route.afi, route.prefix, route.protocol, route.routeType]);
   }
 
   function routeMatchKey(route) {
-    return [route.vrf, route.afi, route.prefix].join('|');
+    return joinKey([route.vrf, route.afi, route.prefix]);
   }
 
   function routeSortKey(route) {
-    return [route.protocol || '', route.routeType || '', route.signature || routeIdentityKey(route)].join('|');
+    return joinKey([route.protocol, route.routeType, route.signature || routeIdentityKey(route)]);
   }
 
-  function buildGroups(routes) {
-    var groups = Object.create(null);
-    for (var i = 0; i < (routes || []).length; i += 1) {
-      var route = routes[i];
-      var key = routeMatchKey(route);
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(route);
-    }
-    Object.keys(groups).forEach(function (key) {
-      groups[key].sort(function (a, b) { return routeSortKey(a).localeCompare(routeSortKey(b)); });
-    });
-    return groups;
+  function pathKey(path) {
+    return joinKey([path.kind, path.nextHop, path.outInterface]);
   }
 
   function uniqueSorted(values) {
@@ -41,16 +43,26 @@
     return output;
   }
 
-  function pathKey(path) {
-    return [path.kind || '', path.nextHop || '', path.outInterface || ''].join('|');
-  }
-
   function pathSet(paths) {
     var set = Object.create(null);
     for (var i = 0; i < (paths || []).length; i += 1) {
       set[pathKey(paths[i])] = paths[i];
     }
     return set;
+  }
+
+  function buildGroups(routes) {
+    var groups = Object.create(null);
+    for (var i = 0; i < (routes || []).length; i += 1) {
+      var route = routes[i];
+      var key = routeMatchKey(route);
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(route);
+    }
+    Object.keys(groups).forEach(function (key) {
+      groups[key].sort(function (a, b) { return routeSortKey(a).localeCompare(routeSortKey(b)); });
+    });
+    return groups;
   }
 
   function diffPaths(beforePaths, afterPaths) {
@@ -67,37 +79,38 @@
     return { added: added, removed: removed };
   }
 
-  function compareRoutes(beforeRoute, afterRoute) {
-    var changes = [];
-    function check(field, label) {
+  function addScalarChanges(changes, beforeRoute, afterRoute) {
+    SCALAR_CHANGES.forEach(function (item) {
+      var field = item[0];
+      var label = item[1];
       if (beforeRoute[field] !== afterRoute[field]) {
         changes.push({
           field: field,
-          label: label || field,
+          label: label,
           before: beforeRoute[field],
           after: afterRoute[field]
         });
       }
-    }
+    });
+  }
 
-    check('protocol', 'protocol');
-    check('routeType', 'route type');
-    check('adminDistance', 'administrative distance');
-    check('metric', 'metric');
-    check('isDefaultCandidate', 'default candidate flag');
-
+  function addPathChange(changes, beforeRoute, afterRoute) {
     var paths = diffPaths(beforeRoute.paths, afterRoute.paths);
-    if (paths.added.length || paths.removed.length) {
-      changes.push({
-        field: 'paths',
-        label: 'next-hop/interface set',
-        before: beforeRoute.paths,
-        after: afterRoute.paths,
-        pathAdded: paths.added,
-        pathRemoved: paths.removed
-      });
-    }
+    if (!paths.added.length && !paths.removed.length) return;
+    changes.push({
+      field: 'paths',
+      label: 'next-hop/interface set',
+      before: beforeRoute.paths,
+      after: afterRoute.paths,
+      pathAdded: paths.added,
+      pathRemoved: paths.removed
+    });
+  }
 
+  function compareRoutes(beforeRoute, afterRoute) {
+    var changes = [];
+    addScalarChanges(changes, beforeRoute, afterRoute);
+    addPathChange(changes, beforeRoute, afterRoute);
     return changes;
   }
 
@@ -139,6 +152,24 @@
     return item;
   }
 
+  function takeExactIdentityPairs(beforeRemaining, afterRemaining) {
+    var pairs = [];
+    for (var i = beforeRemaining.length - 1; i >= 0; i -= 1) {
+      var identity = routeIdentityKey(beforeRemaining[i]);
+      var matchedIndex = -1;
+      for (var j = 0; j < afterRemaining.length; j += 1) {
+        if (routeIdentityKey(afterRemaining[j]) === identity) {
+          matchedIndex = j;
+          break;
+        }
+      }
+      if (matchedIndex >= 0) {
+        pairs.push({ before: removeAt(beforeRemaining, i), after: removeAt(afterRemaining, matchedIndex) });
+      }
+    }
+    return pairs;
+  }
+
   function greedyPairRemaining(beforeRemaining, afterRemaining) {
     var pairs = [];
     while (beforeRemaining.length && afterRemaining.length) {
@@ -160,6 +191,12 @@
     return pairs;
   }
 
+  function pairTieKey(pairList) {
+    return pairList.map(function (pair) {
+      return routeSortKey(pair.before) + '=>' + routeSortKey(pair.after);
+    }).sort().join('\n');
+  }
+
   function optimalPairRemaining(beforeRemaining, afterRemaining) {
     var before = beforeRemaining.slice();
     var after = afterRemaining.slice();
@@ -173,17 +210,11 @@
     var usedAfter = [];
     var current = [];
 
-    function routeTieKey(pairList) {
-      return pairList.map(function (pair) {
-        return routeSortKey(pair.before) + '=>' + routeSortKey(pair.after);
-      }).sort().join('\n');
-    }
-
     function consider(score) {
-      var ordered = current.slice();
-      if (score > bestScore || (score === bestScore && routeTieKey(ordered) < routeTieKey(bestPairs))) {
+      var candidate = current.slice();
+      if (score > bestScore || (score === bestScore && pairTieKey(candidate) < pairTieKey(bestPairs))) {
         bestScore = score;
-        bestPairs = ordered;
+        bestPairs = candidate;
       }
     }
 
@@ -193,47 +224,57 @@
         return;
       }
       var i;
-      var beforeIndex = -1;
-      var afterIndex = -1;
+      var anchorIndex = -1;
       if (before.length <= after.length) {
         for (i = 0; i < before.length; i += 1) {
           if (!usedBefore[i]) {
-            beforeIndex = i;
+            anchorIndex = i;
             break;
           }
         }
         for (var ai = 0; ai < after.length; ai += 1) {
           if (usedAfter[ai]) continue;
-          usedBefore[beforeIndex] = true;
+          usedBefore[anchorIndex] = true;
           usedAfter[ai] = true;
-          current.push({ before: before[beforeIndex], after: after[ai] });
-          search(score + routePairScore(before[beforeIndex], after[ai]));
+          current.push({ before: before[anchorIndex], after: after[ai] });
+          search(score + routePairScore(before[anchorIndex], after[ai]));
           current.pop();
-          usedBefore[beforeIndex] = false;
+          usedBefore[anchorIndex] = false;
           usedAfter[ai] = false;
         }
       } else {
         for (i = 0; i < after.length; i += 1) {
           if (!usedAfter[i]) {
-            afterIndex = i;
+            anchorIndex = i;
             break;
           }
         }
         for (var bi = 0; bi < before.length; bi += 1) {
           if (usedBefore[bi]) continue;
           usedBefore[bi] = true;
-          usedAfter[afterIndex] = true;
-          current.push({ before: before[bi], after: after[afterIndex] });
-          search(score + routePairScore(before[bi], after[afterIndex]));
+          usedAfter[anchorIndex] = true;
+          current.push({ before: before[bi], after: after[anchorIndex] });
+          search(score + routePairScore(before[bi], after[anchorIndex]));
           current.pop();
           usedBefore[bi] = false;
-          usedAfter[afterIndex] = false;
+          usedAfter[anchorIndex] = false;
         }
       }
     }
 
     search(0);
     return bestPairs;
+  }
+
+  function appendChangedPairs(pairs, beforeRemaining, afterRemaining) {
+    var changedPairs = optimalPairRemaining(beforeRemaining, afterRemaining);
+    changedPairs.forEach(function (pair) {
+      var beforeIndex = beforeRemaining.indexOf(pair.before);
+      var afterIndex = afterRemaining.indexOf(pair.after);
+      if (beforeIndex >= 0 && afterIndex >= 0) {
+        pairs.push({ before: removeAt(beforeRemaining, beforeIndex), after: removeAt(afterRemaining, afterIndex) });
+      }
+    });
   }
 
   function pairRoutes(beforeGroup, afterGroup) {
@@ -244,44 +285,45 @@
     beforeRemaining.sort(function (a, b) { return routeSortKey(a).localeCompare(routeSortKey(b)); });
     afterRemaining.sort(function (a, b) { return routeSortKey(a).localeCompare(routeSortKey(b)); });
 
-    // First preserve exact route identities. This avoids collapsing NX-OS local/direct
-    // or multiple same-prefix protocol records when they are present on both sides.
-    for (var i = beforeRemaining.length - 1; i >= 0; i -= 1) {
-      var beforeRoute = beforeRemaining[i];
-      var identity = routeIdentityKey(beforeRoute);
-      var matchedIndex = -1;
-      for (var j = 0; j < afterRemaining.length; j += 1) {
-        if (routeIdentityKey(afterRemaining[j]) === identity) {
-          matchedIndex = j;
-          break;
-        }
-      }
-      if (matchedIndex >= 0) {
-        pairs.push({ before: removeAt(beforeRemaining, i), after: removeAt(afterRemaining, matchedIndex) });
-      }
-    }
-
-    // Pair remaining routes by same VRF/AFI/prefix as changed routes. Use an
-    // optimal small-group assignment so multiple same-prefix protocol changes are
-    // matched to the most similar counterpart, not merely the first greedy match.
-    var changedPairs = optimalPairRemaining(beforeRemaining, afterRemaining);
-    changedPairs.forEach(function (pair) {
-      var beforeIndex = beforeRemaining.indexOf(pair.before);
-      var afterIndex = afterRemaining.indexOf(pair.after);
-      if (beforeIndex >= 0 && afterIndex >= 0) {
-        pairs.push({ before: removeAt(beforeRemaining, beforeIndex), after: removeAt(afterRemaining, afterIndex) });
-      }
-    });
+    pairs = pairs.concat(takeExactIdentityPairs(beforeRemaining, afterRemaining));
+    appendChangedPairs(pairs, beforeRemaining, afterRemaining);
 
     while (beforeRemaining.length) pairs.push({ before: beforeRemaining.shift(), after: null });
     while (afterRemaining.length) pairs.push({ before: null, after: afterRemaining.shift() });
 
     pairs.sort(function (a, b) {
-      var ak = routeSortKey(a.after || a.before);
-      var bk = routeSortKey(b.after || b.before);
-      return ak.localeCompare(bk);
+      return routeSortKey(a.after || a.before).localeCompare(routeSortKey(b.after || b.before));
     });
     return pairs;
+  }
+
+  function classifyPair(pair) {
+    if (!pair.before && pair.after) return { type: 'added', changes: [] };
+    if (pair.before && !pair.after) return { type: 'removed', changes: [] };
+    var changes = compareRoutes(pair.before, pair.after);
+    return { type: changes.length ? 'changed' : 'unchanged', changes: changes };
+  }
+
+  function makeResult(pair, groupKey, index) {
+    var route = pair.after || pair.before;
+    var classification = classifyPair(pair);
+    var result = {
+      key: groupKey + '|' + index + '|' + routeIdentityKey(route),
+      type: classification.type,
+      vrf: route.vrf,
+      afi: route.afi,
+      prefix: route.prefix,
+      protocol: '',
+      before: pair.before || null,
+      after: pair.after || null,
+      changes: classification.changes
+    };
+    result.protocol = protocolLabel(result);
+    return result;
+  }
+
+  function makeVrfSummary() {
+    return { added: 0, removed: 0, changed: 0, unchanged: 0 };
   }
 
   function compare(beforeRoutes, afterRoutes, beforeWarnings, afterWarnings) {
@@ -289,7 +331,7 @@
     var afterGroups = buildGroups(afterRoutes || []);
     var keys = uniqueSorted(Object.keys(beforeGroups).concat(Object.keys(afterGroups)));
     var results = [];
-    var totals = { added: 0, removed: 0, changed: 0, unchanged: 0 };
+    var totals = makeVrfSummary();
     var vrfSummary = Object.create(null);
 
     function ensureVrf(vrf) {
@@ -302,33 +344,9 @@
     keys.forEach(function (key) {
       var pairs = pairRoutes(beforeGroups[key] || [], afterGroups[key] || []);
       pairs.forEach(function (pair, index) {
-        var beforeRoute = pair.before || null;
-        var afterRoute = pair.after || null;
-        var route = afterRoute || beforeRoute;
-        var type = 'unchanged';
-        var changes = [];
-        if (!beforeRoute && afterRoute) {
-          type = 'added';
-        } else if (beforeRoute && !afterRoute) {
-          type = 'removed';
-        } else {
-          changes = compareRoutes(beforeRoute, afterRoute);
-          type = changes.length ? 'changed' : 'unchanged';
-        }
-        totals[type] += 1;
-        ensureVrf(route.vrf)[type] += 1;
-        var result = {
-          key: key + '|' + index + '|' + routeIdentityKey(route),
-          type: type,
-          vrf: route.vrf,
-          afi: route.afi,
-          prefix: route.prefix,
-          protocol: '',
-          before: beforeRoute,
-          after: afterRoute,
-          changes: changes
-        };
-        result.protocol = protocolLabel(result);
+        var result = makeResult(pair, key, index);
+        totals[result.type] += 1;
+        ensureVrf(result.vrf)[result.type] += 1;
         results.push(result);
       });
     });
@@ -338,13 +356,13 @@
     results.forEach(function (item) {
       protocolValues = protocolValues.concat(protocolsForResult(item));
     });
-    var protocols = uniqueSorted(protocolValues.filter(Boolean));
+
     return {
       results: results,
       totals: totals,
       vrfSummary: vrfs.map(function (vrf) { return vrfSummary[vrf]; }),
       vrfs: vrfs,
-      protocols: protocols,
+      protocols: uniqueSorted(protocolValues.filter(Boolean)),
       parseWarnings: (beforeWarnings || []).concat(afterWarnings || []),
       totalVrfs: vrfs.length
     };
@@ -361,6 +379,13 @@
     compare: compare,
     compareRoutes: compareRoutes,
     diffPaths: diffPaths,
-    summarizeChange: summarizeChange
+    summarizeChange: summarizeChange,
+    _internals: {
+      routeIdentityKey: routeIdentityKey,
+      routeMatchKey: routeMatchKey,
+      pathKey: pathKey,
+      pairRoutes: pairRoutes,
+      routePairScore: routePairScore
+    }
   };
 }(window));
