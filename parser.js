@@ -140,8 +140,16 @@
     return { adminDistance: Number(match[1]), metric: Number(match[2]) };
   }
 
+  function hasBackupMarker(value) {
+    return /\(!\)/.test(String(value || ''));
+  }
+
+  function stripBackupMarker(value) {
+    return String(value || '').replace(/\s*\(!\)\s*/g, ' ').trim();
+  }
+
   function sanitizeToken(token) {
-    return String(token || '').replace(/\s*\(!\)\s*/g, '').replace(/[(),]/g, '').trim();
+    return stripBackupMarker(token).replace(/[(),]/g, '').trim();
   }
 
   function isIpv4Address(token) {
@@ -176,6 +184,7 @@
     if (!match) return null;
     var firstToken = sanitizeToken(match[1]);
     var tail = match[2] || '';
+    var isBackup = hasBackupMarker(rest);
     var outInterface = '';
     var parts = tail.split(',');
     for (var i = parts.length - 1; i >= 0; i -= 1) {
@@ -195,27 +204,31 @@
       return {
         nextHop: firstToken,
         outInterface: outInterface,
-        kind: 'via'
+        kind: 'via',
+        isBackup: isBackup
       };
     }
     if (/directly\s+connected/i.test(tail)) {
       return {
         nextHop: '',
         outInterface: firstToken,
-        kind: 'connected'
+        kind: 'connected',
+        isBackup: isBackup
       };
     }
     if (/receive/i.test(tail)) {
       return {
         nextHop: '',
         outInterface: firstToken,
-        kind: 'receive'
+        kind: 'receive',
+        isBackup: isBackup
       };
     }
     return {
       nextHop: '',
       outInterface: firstToken,
-      kind: 'interface'
+      kind: 'interface',
+      isBackup: isBackup
     };
   }
 
@@ -239,7 +252,7 @@
   }
 
   function pathKey(path) {
-    return [path.kind || '', path.nextHop || '', path.outInterface || '', path.adminDistance === null || path.adminDistance === undefined ? '' : path.adminDistance, path.metric === null || path.metric === undefined ? '' : path.metric].join('|');
+    return [path.kind || '', path.nextHop || '', path.outInterface || '', path.adminDistance === null || path.adminDistance === undefined ? '' : path.adminDistance, path.metric === null || path.metric === undefined ? '' : path.metric, path.isBackup ? 'backup' : 'main'].join('|');
   }
 
   function annotatePath(path, adminDistance, metric) {
@@ -262,7 +275,9 @@
           outInterface: path.outInterface || '',
           kind: path.kind || (path.nextHop ? 'via' : 'connected'),
           adminDistance: path.adminDistance === undefined ? null : path.adminDistance,
-          metric: path.metric === undefined ? null : path.metric
+          metric: path.metric === undefined ? null : path.metric,
+          isBackup: path.isBackup === true,
+          isMain: false
         });
       }
     }
@@ -274,6 +289,10 @@
 
   function normalizeRoute(route) {
     route.paths = sortAndDedupePaths(route.paths || []);
+    var hasBackup = route.paths.some(function (path) { return path.isBackup === true; });
+    route.paths.forEach(function (path) {
+      path.isMain = hasBackup && path.isBackup !== true;
+    });
     route.key = [route.vrf, route.afi, route.prefix, route.protocol, route.routeType].join('|');
     route.signature = JSON.stringify({
       protocol: route.protocol,
@@ -618,14 +637,28 @@
     return output;
   }
 
+  function formatPathMetric(path) {
+    if (!path || (!path.isBackup && !path.isMain)) return '';
+    if (path.adminDistance === null || path.adminDistance === undefined || path.metric === null || path.metric === undefined) return '';
+    return ' [' + path.adminDistance + '/' + path.metric + ']';
+  }
+
+  function formatPathRole(path) {
+    if (!path) return '';
+    if (path.isBackup) return ' (FRR backup)';
+    if (path.isMain) return ' (main)';
+    return '';
+  }
+
   function formatPath(path) {
     if (!path) return '-';
-    if ((path.kind || '') === 'connected') return 'connected ' + (path.outInterface || '');
-    if ((path.kind || '') === 'receive') return 'receive ' + (path.outInterface || '');
-    if ((path.kind || '') === 'vpn') return 'VPN ' + (path.outInterface || '');
-    if ((path.kind || '') === 'discard') return 'discard ' + (path.outInterface || '');
-    if ((path.kind || '') === 'interface') return 'via ' + (path.outInterface || '-');
-    return 'via ' + (path.nextHop || '-') + (path.outInterface ? ' ' + path.outInterface : '');
+    var suffix = formatPathMetric(path) + formatPathRole(path);
+    if ((path.kind || '') === 'connected') return 'connected ' + (path.outInterface || '') + suffix;
+    if ((path.kind || '') === 'receive') return 'receive ' + (path.outInterface || '') + suffix;
+    if ((path.kind || '') === 'vpn') return 'VPN ' + (path.outInterface || '') + suffix;
+    if ((path.kind || '') === 'discard') return 'discard ' + (path.outInterface || '') + suffix;
+    if ((path.kind || '') === 'interface') return 'via ' + (path.outInterface || '-') + suffix;
+    return 'via ' + (path.nextHop || '-') + (path.outInterface ? ' ' + path.outInterface : '') + suffix;
   }
 
   function formatRouteCode(route) {

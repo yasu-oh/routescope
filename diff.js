@@ -29,6 +29,15 @@
     return joinKey([path.kind, path.nextHop, path.outInterface]);
   }
 
+  function pathRole(path) {
+    return path && path.isBackup ? 'FRR backup' : 'main';
+  }
+
+  function pathDescription(path) {
+    if (!path) return '-';
+    return [path.kind || '', path.nextHop || '', path.outInterface || ''].filter(Boolean).join(' ') || '-';
+  }
+
   function uniqueSorted(values) {
     var seen = Object.create(null);
     var output = [];
@@ -107,10 +116,34 @@
     });
   }
 
+  function addPathRoleChange(changes, beforeRoute, afterRoute) {
+    var beforeSet = pathSet(beforeRoute.paths);
+    var afterSet = pathSet(afterRoute.paths);
+    var beforeRoles = [];
+    var afterRoles = [];
+    Object.keys(beforeSet).sort().forEach(function (key) {
+      if (!afterSet[key]) return;
+      var beforeRole = pathRole(beforeSet[key]);
+      var afterRole = pathRole(afterSet[key]);
+      if (beforeRole !== afterRole) {
+        beforeRoles.push(pathDescription(beforeSet[key]) + ': ' + beforeRole);
+        afterRoles.push(pathDescription(afterSet[key]) + ': ' + afterRole);
+      }
+    });
+    if (!beforeRoles.length) return;
+    changes.push({
+      field: 'pathRole',
+      label: 'FRR backup role',
+      before: beforeRoles.join('; '),
+      after: afterRoles.join('; ')
+    });
+  }
+
   function compareRoutes(beforeRoute, afterRoute) {
     var changes = [];
     addScalarChanges(changes, beforeRoute, afterRoute);
     addPathChange(changes, beforeRoute, afterRoute);
+    addPathRoleChange(changes, beforeRoute, afterRoute);
     return changes;
   }
 
