@@ -165,6 +165,15 @@
     return isIpv4Address(token) || isIpv6Address(token);
   }
 
+  function parseNextHopToken(token) {
+    var clean = sanitizeToken(token);
+    var parts = clean.split('%');
+    return {
+      nextHop: parts[0] || '',
+      nextHopVrf: parts.length > 1 ? parts.slice(1).join('%') : ''
+    };
+  }
+
   function detectAfi(prefix) {
     return String(prefix || '').indexOf(':') >= 0 ? 'ipv6' : 'ipv4';
   }
@@ -182,7 +191,8 @@
   function parsePathFromVia(rest) {
     var match = String(rest || '').match(/via\s+(\S+)(.*)$/i);
     if (!match) return null;
-    var firstToken = sanitizeToken(match[1]);
+    var parsedNextHop = parseNextHopToken(match[1]);
+    var firstToken = parsedNextHop.nextHop;
     var tail = match[2] || '';
     var isBackup = hasBackupMarker(rest);
     var outInterface = '';
@@ -203,6 +213,7 @@
     if (isIpAddress(firstToken)) {
       return {
         nextHop: firstToken,
+        nextHopVrf: parsedNextHop.nextHopVrf,
         outInterface: outInterface,
         kind: 'via',
         isBackup: isBackup
@@ -252,7 +263,7 @@
   }
 
   function pathKey(path) {
-    return [path.kind || '', path.nextHop || '', path.outInterface || '', path.adminDistance === null || path.adminDistance === undefined ? '' : path.adminDistance, path.metric === null || path.metric === undefined ? '' : path.metric, path.isBackup ? 'backup' : 'main'].join('|');
+    return [path.kind || '', path.nextHop || '', path.nextHopVrf || '', path.outInterface || '', path.adminDistance === null || path.adminDistance === undefined ? '' : path.adminDistance, path.metric === null || path.metric === undefined ? '' : path.metric, path.isBackup ? 'backup' : 'main'].join('|');
   }
 
   function annotatePath(path, adminDistance, metric) {
@@ -272,6 +283,7 @@
         seen[key] = true;
         output.push({
           nextHop: path.nextHop || '',
+          nextHopVrf: path.nextHopVrf || '',
           outInterface: path.outInterface || '',
           kind: path.kind || (path.nextHop ? 'via' : 'connected'),
           adminDistance: path.adminDistance === undefined ? null : path.adminDistance,
@@ -387,22 +399,21 @@
     if (!pendingPrefix) return null;
     var match = String(line || '').match(/^\s*(?:\*+)?via\s+([^,]+)(?:,\s*([^\[,]+))?,\s*\[(\d+)\/(\d+)\],\s*([^,]+),\s*([^,\s]+)(?:,\s*([^,]+))?/i);
     if (!match) return null;
-    var firstToken = sanitizeToken(match[1]);
+    var parsedNextHop = parseNextHopToken(match[1]);
+    var firstToken = parsedNextHop.nextHop;
     var outInterface = sanitizeToken(match[2] || '');
     var protocol = sanitizeToken(match[6]);
     var routeType = sanitizeToken(match[7] || '');
     if (/^tag\b/i.test(routeType)) routeType = '';
     if (/^discard$/i.test(routeType)) routeType = '';
     var nextHop = '';
-    var vrfSplit = firstToken.split('%');
-    firstToken = vrfSplit[0];
     if (isIpAddress(firstToken)) {
       nextHop = firstToken;
     } else if (!outInterface) {
       outInterface = firstToken;
     }
     var kind = nextHop ? 'via' : (/^Null/i.test(outInterface) ? 'discard' : 'interface');
-    return makeRouteFromParts(currentVrf, 'ipv4', pendingPrefix, protocol, routeType, match[3], match[4], [annotatePath({ nextHop: nextHop, outInterface: outInterface, kind: kind }, match[3], match[4])], line.trim());
+    return makeRouteFromParts(currentVrf, 'ipv4', pendingPrefix, protocol, routeType, match[3], match[4], [annotatePath({ nextHop: nextHop, nextHopVrf: nextHop ? parsedNextHop.nextHopVrf : '', outInterface: outInterface, kind: kind }, match[3], match[4])], line.trim());
   }
 
   function parseXrRouteEntryHeader(line) {
@@ -413,7 +424,7 @@
   function parseXrKnownVia(line) {
     var match = String(line || '').match(/^\s*Known\s+via\s+"([^"]+)",\s+distance\s+(\d+),\s+metric\s+(\d+)/i);
     if (!match) return null;
-    return { protocol: match[1], adminDistance: Number(match[2]), metric: Number(match[3]) };
+    return { protocol: match[1], adminDistance: Number(match[2]), metric: Number(match[3]), isDefaultCandidate: /candidate\s+default\s+path/i.test(line) };
   }
 
   function parseXrDescriptorPath(line, currentVrf, xrEntry) {
@@ -422,7 +433,12 @@
     if (!match) return null;
     var nextHop = match[1];
     var outInterface = sanitizeToken(match[2] || '');
-    return makeRouteFromParts(currentVrf, 'ipv4', xrEntry.prefix, xrEntry.protocol || '', '', xrEntry.adminDistance, xrEntry.metric, [annotatePath({ nextHop: nextHop, outInterface: outInterface, kind: 'via' }, xrEntry.adminDistance, xrEntry.metric)], line.trim());
+    var route = makeRouteFromParts(currentVrf, 'ipv4', xrEntry.prefix, xrEntry.protocol || '', '', xrEntry.adminDistance, xrEntry.metric, [annotatePath({ nextHop: nextHop, outInterface: outInterface, kind: 'via' }, xrEntry.adminDistance, xrEntry.metric)], line.trim());
+    if (xrEntry.isDefaultCandidate) {
+      route.isDefaultCandidate = true;
+      normalizeRoute(route);
+    }
+    return route;
   }
 
   function makeRoute(vrf, protocolToken, routeTypeToken, prefix, rest, rawLine, inheritedPrefixLength) {
@@ -519,7 +535,7 @@
       }
       var xrPrefix = parseXrRouteEntryHeader(line);
       if (xrPrefix) {
-        xrEntry = { prefix: xrPrefix, protocol: '', adminDistance: null, metric: null };
+        xrEntry = { prefix: xrPrefix, protocol: '', adminDistance: null, metric: null, isDefaultCandidate: false };
         lastRoute = null;
         continue;
       }
@@ -528,6 +544,7 @@
         xrEntry.protocol = xrKnown.protocol;
         xrEntry.adminDistance = xrKnown.adminDistance;
         xrEntry.metric = xrKnown.metric;
+        xrEntry.isDefaultCandidate = xrKnown.isDefaultCandidate;
         continue;
       }
       var nxosPrefix = parseNxosPrefixHeader(line);
@@ -658,7 +675,8 @@
     if ((path.kind || '') === 'vpn') return 'VPN ' + (path.outInterface || '') + suffix;
     if ((path.kind || '') === 'discard') return 'discard ' + (path.outInterface || '') + suffix;
     if ((path.kind || '') === 'interface') return 'via ' + (path.outInterface || '-') + suffix;
-    return 'via ' + (path.nextHop || '-') + (path.outInterface ? ' ' + path.outInterface : '') + suffix;
+    var nextHop = (path.nextHop || '-') + (path.nextHopVrf ? '%' + path.nextHopVrf : '');
+    return 'via ' + nextHop + (path.outInterface ? ' ' + path.outInterface : '') + suffix;
   }
 
   function formatRouteCode(route) {

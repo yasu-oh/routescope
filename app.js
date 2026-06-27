@@ -136,7 +136,7 @@
     for (var i = 0; i < routes.length; i += 1) {
       var paths = routes[i].paths || [];
       for (var j = 0; j < paths.length; j += 1) {
-        var value = key === 'nextHop' ? paths[j].nextHop : paths[j].outInterface;
+        var value = key === 'nextHop' ? [paths[j].nextHop, paths[j].nextHopVrf].filter(Boolean).join('%') : paths[j].outInterface;
         if (String(value || '').toLowerCase().indexOf(needle) >= 0) return true;
       }
     }

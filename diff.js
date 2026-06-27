@@ -26,7 +26,7 @@
   }
 
   function pathKey(path) {
-    return joinKey([path.kind, path.nextHop, path.outInterface]);
+    return joinKey([path.kind, path.nextHop, path.nextHopVrf, path.outInterface]);
   }
 
   function pathRole(path) {
@@ -35,7 +35,7 @@
 
   function pathDescription(path) {
     if (!path) return '-';
-    return [path.kind || '', path.nextHop || '', path.outInterface || ''].filter(Boolean).join(' ') || '-';
+    return [path.kind || '', path.nextHop || '', path.nextHopVrf ? '%' + path.nextHopVrf : '', path.outInterface || ''].filter(Boolean).join(' ') || '-';
   }
 
   function uniqueSorted(values) {
