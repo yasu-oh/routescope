@@ -193,9 +193,12 @@
     if (!match) return null;
     var parsedNextHop = parseNextHopToken(match[1]);
     var firstToken = parsedNextHop.nextHop;
+    var nextHopVrf = parsedNextHop.nextHopVrf;
     var tail = match[2] || '';
     var isBackup = hasBackupMarker(rest);
     var outInterface = '';
+    var parenthesizedNextHopVrf = tail.match(/^\s*\((?!nexthop\s+in\s+)([^)]+)\)/i);
+    if (!nextHopVrf && parenthesizedNextHopVrf) nextHopVrf = sanitizeToken(parenthesizedNextHopVrf[1]);
     var parts = tail.split(',');
     for (var i = parts.length - 1; i >= 0; i -= 1) {
       var rawPart = String(parts[i] || '').trim();
@@ -213,7 +216,7 @@
     if (isIpAddress(firstToken)) {
       return {
         nextHop: firstToken,
-        nextHopVrf: parsedNextHop.nextHopVrf,
+        nextHopVrf: nextHopVrf,
         outInterface: outInterface,
         kind: 'via',
         isBackup: isBackup
@@ -263,7 +266,20 @@
   }
 
   function pathKey(path) {
-    return [path.kind || '', path.nextHop || '', path.nextHopVrf || '', path.outInterface || '', path.adminDistance === null || path.adminDistance === undefined ? '' : path.adminDistance, path.metric === null || path.metric === undefined ? '' : path.metric, path.isBackup ? 'backup' : 'main'].join('|');
+    return [
+      path.kind || '',
+      path.nextHop || '',
+      path.nextHopVrf || '',
+      path.outInterface || '',
+      path.adminDistance === null || path.adminDistance === undefined ? '' : path.adminDistance,
+      path.metric === null || path.metric === undefined ? '' : path.metric,
+      path.isBackup ? 'backup' : 'main'
+    ].join('|');
+  }
+
+  function formatNextHop(path) {
+    if (!path || !path.nextHop) return '-';
+    return path.nextHop + (path.nextHopVrf ? '%' + path.nextHopVrf : '');
   }
 
   function annotatePath(path, adminDistance, metric) {
@@ -491,6 +507,7 @@
     for (var i = 0; i < routes.length; i += 1) {
       var route = normalizeRoute(routes[i]);
       if (map[route.key]) {
+        map[route.key].isDefaultCandidate = map[route.key].isDefaultCandidate || route.isDefaultCandidate;
         map[route.key].paths = sortAndDedupePaths(map[route.key].paths.concat(route.paths));
         map[route.key].rawLines = map[route.key].rawLines.concat(route.rawLines);
         map[route.key] = normalizeRoute(map[route.key]);
@@ -675,8 +692,7 @@
     if ((path.kind || '') === 'vpn') return 'VPN ' + (path.outInterface || '') + suffix;
     if ((path.kind || '') === 'discard') return 'discard ' + (path.outInterface || '') + suffix;
     if ((path.kind || '') === 'interface') return 'via ' + (path.outInterface || '-') + suffix;
-    var nextHop = (path.nextHop || '-') + (path.nextHopVrf ? '%' + path.nextHopVrf : '');
-    return 'via ' + nextHop + (path.outInterface ? ' ' + path.outInterface : '') + suffix;
+    return 'via ' + formatNextHop(path) + (path.outInterface ? ' ' + path.outInterface : '') + suffix;
   }
 
   function formatRouteCode(route) {
@@ -703,6 +719,7 @@
     pathKey: pathKey,
     _internals: {
       stripAnsi: stripAnsi,
+      formatNextHop: formatNextHop,
       parseRouteLine: parseRouteLine,
       parseContinuationLine: parseContinuationLine,
       parseRouteCode: parseRouteCode

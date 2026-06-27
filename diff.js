@@ -33,9 +33,14 @@
     return path && path.isBackup ? 'FRR backup' : 'main';
   }
 
+  function formatNextHop(path) {
+    if (!path || !path.nextHop) return '';
+    return path.nextHop + (path.nextHopVrf ? '%' + path.nextHopVrf : '');
+  }
+
   function pathDescription(path) {
     if (!path) return '-';
-    return [path.kind || '', path.nextHop || '', path.nextHopVrf ? '%' + path.nextHopVrf : '', path.outInterface || ''].filter(Boolean).join(' ') || '-';
+    return [path.kind || '', formatNextHop(path), path.outInterface || ''].filter(Boolean).join(' ') || '-';
   }
 
   function uniqueSorted(values) {

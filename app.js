@@ -35,6 +35,7 @@
     'O    203.0.113.192/26 [110/20] via 192.0.2.50, 00:03:00, Vlan50',
     'Routing Table: CUSTOMER_A',
     'O IA 10.10.0.0/24 [110/30] via 198.51.100.1, 00:02:10, Vlan30',
+    'B    10.30.0.0/16 [200/0] via 198.51.100.10 (AMB), 3w4d',
     'Routing Table: CUSTOMER_B',
     'S    10.20.0.0/24 [1/0] via 198.51.100.254'
   ].join('\n') + '\n';
@@ -59,6 +60,7 @@
     'O E2 198.51.100.64/26 [110/20] via 192.0.2.60, 00:05:00, Vlan60',
     'Routing Table: CUSTOMER_A',
     'O IA 10.10.0.0/24 [110/30] via 198.51.100.1, 4d12h, Vlan30',
+    'B    10.30.0.0/16 [200/0] via 198.51.100.10 (BLU), 3w4d',
     'Routing Table: CUSTOMER_B',
     'S    10.20.0.0/24 [1/0] via 198.51.100.254',
     'S    10.20.1.0/24 [1/0] via 198.51.100.253'
@@ -88,6 +90,11 @@
   function pathsText(paths) {
     if (!paths || !paths.length) return '-';
     return paths.map(window.RouteDiffParser.formatPath).join('; ');
+  }
+
+  function pathNextHopText(path) {
+    if (!path || !path.nextHop) return '';
+    return path.nextHop + (path.nextHopVrf ? '%' + path.nextHopVrf : '');
   }
 
   function parseAndDiff() {
@@ -136,7 +143,7 @@
     for (var i = 0; i < routes.length; i += 1) {
       var paths = routes[i].paths || [];
       for (var j = 0; j < paths.length; j += 1) {
-        var value = key === 'nextHop' ? [paths[j].nextHop, paths[j].nextHopVrf].filter(Boolean).join('%') : paths[j].outInterface;
+        var value = key === 'nextHop' ? pathNextHopText(paths[j]) : paths[j].outInterface;
         if (String(value || '').toLowerCase().indexOf(needle) >= 0) return true;
       }
     }
