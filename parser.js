@@ -9,7 +9,7 @@
   var ROUTE_START_RE = new RegExp('^\\s*([A-Za-z][A-Za-z0-9*]*)(?:\\s+([A-Za-z0-9*]+))?\\s+(' + ROUTE_PREFIX + ')(.*)$');
   var CONTINUATION_RE = /^\s+(?:\[(\d+)\/(\d+)\]\s+)?via\s+(\S+)(.*)$/i;
   var AD_METRIC_RE = /\[(\d+)\/(\d+)\]/;
-  var AGE_TOKEN_RE = /^(?:\d{1,2}:\d{2}:\d{2}|\d+w\d+d|\d+d\d+h|\d+h\d+m|\d+m\d+s|\d+[wdhms])$/i;
+  var AGE_TOKEN_RE = /^(?:\d{1,2}:\d{2}:\d{2}|\d+(?:\.\d+)?|\d+y\d+w|\d+w\d+d|\d+d\d+h|\d+h\d+m|\d+m\d+s|\d+[ywdhms])$/i;
 
   function stripAnsi(value) {
     return String(value || '').replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '');
@@ -30,6 +30,17 @@
     if (/^\S+[>#]\s*$/i.test(trimmed)) return true;
     if (/^Load for five secs:/i.test(trimmed)) return true;
     if (/^Time source is/i.test(trimmed)) return true;
+    if (/^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\w+\s+\d+\s+\d{1,2}:\d{2}:\d{2}(?:\.\d+)?\s+\S+/i.test(trimmed)) return true;
+    if (/^'\*+'\s+denotes\s/i.test(trimmed)) return true;
+    if (/^'%<string>'\s+in\s+via\s+output\s+denotes\s+VRF/i.test(trimmed)) return true;
+    if (/^'\[x\/y\]'\s+denotes\s+/i.test(trimmed)) return true;
+    if (/^Route not found/i.test(trimmed)) return true;
+    if (/^Route metric is\s+/i.test(trimmed)) return true;
+    if (/^Tag\s+\d+/i.test(trimmed)) return true;
+    if (/^Installed\s+/i.test(trimmed)) return true;
+    if (/^Routing Descriptor Blocks\b/i.test(trimmed)) return true;
+    if (/^No advertising protos\.?$/i.test(trimmed)) return true;
+    if (/^%\s+(?:No matching routes found|Network not in table)/i.test(trimmed)) return true;
     return false;
   }
 
@@ -46,6 +57,8 @@
     match = line.match(/^\s*IPv6 Routing Table\s+-\s+(.+?)\s+-\s+\d+\s+entries/i);
     if (match) return cleanVrfName(match[1]);
     match = line.match(/^\s*IP Route Table for VRF\s+"?([^"\s]+)"?/i);
+    if (match) return cleanVrfName(match[1]);
+    match = line.match(/^\s*VRF:\s*(\S+)/i);
     if (match) return cleanVrfName(match[1]);
     return null;
   }
@@ -76,6 +89,25 @@
     return prefix + '/' + prefixLength;
   }
 
+  function netmaskToPrefixLength(netmask) {
+    var parts = String(netmask || '').split('.');
+    if (parts.length !== 4) return null;
+    var bits = '';
+    for (var i = 0; i < parts.length; i += 1) {
+      var octet = Number(parts[i]);
+      if (octet < 0 || octet > 255 || isNaN(octet)) return null;
+      bits += ('00000000' + octet.toString(2)).slice(-8);
+    }
+    if (!/^1*0*$/.test(bits)) return null;
+    return bits.replace(/0+$/, '').length;
+  }
+
+  function normalizeNetworkAndMask(network, netmask) {
+    var prefixLength = netmaskToPrefixLength(netmask);
+    if (prefixLength === null) return String(network || '').trim() + ' ' + String(netmask || '').trim();
+    return String(network || '').trim() + '/' + prefixLength;
+  }
+
   function parseRouteCode(protocolToken, routeTypeToken) {
     var rawProtocol = String(protocolToken || '').trim();
     var rawRouteType = String(routeTypeToken || '').trim();
@@ -88,8 +120,8 @@
       for (var i = 0; i < suffixes.length; i += 1) {
         var suffix = suffixes[i];
         if (protocol.length > suffix.length && protocol.slice(protocol.length - suffix.length) === suffix) {
-          routeType = suffix;
-          protocol = protocol.slice(0, protocol.length - suffix.length);
+          routeType = suffix.trim();
+          protocol = protocol.slice(0, protocol.length - suffix.length).trim();
           break;
         }
       }
@@ -109,7 +141,7 @@
   }
 
   function sanitizeToken(token) {
-    return String(token || '').replace(/[(),]/g, '').trim();
+    return String(token || '').replace(/\s*\(!\)\s*/g, '').replace(/[(),]/g, '').trim();
   }
 
   function isIpv4Address(token) {
@@ -147,11 +179,17 @@
     var outInterface = '';
     var parts = tail.split(',');
     for (var i = parts.length - 1; i >= 0; i -= 1) {
-      var token = sanitizeToken(parts[i]);
+      var rawPart = String(parts[i] || '').trim();
+      if (/^\([^)]+\)$/.test(rawPart)) continue;
+      var token = sanitizeToken(rawPart);
       if (looksLikeInterface(token)) {
         outInterface = token;
         break;
       }
+    }
+    if (!outInterface) {
+      var nexthopVrf = tail.match(/\(nexthop\s+in\s+(vrf\s+[^)]+)\)/i);
+      if (nexthopVrf) outInterface = sanitizeToken(nexthopVrf[1]);
     }
     if (isIpAddress(firstToken)) {
       return {
@@ -182,17 +220,33 @@
   }
 
   function parsePathFromConnected(rest) {
-    var match = String(rest || '').match(/is\s+directly\s+connected\s*,\s*(\S+)/i);
+    var match = String(rest || '').match(/is\s+directly\s+connected\s*(?:,\s*(.*))?$/i);
     if (!match) return null;
+    var outInterface = '';
+    var parts = String(match[1] || '').split(',');
+    for (var i = parts.length - 1; i >= 0; i -= 1) {
+      var token = sanitizeToken(parts[i]);
+      if (looksLikeInterface(token)) {
+        outInterface = token;
+        break;
+      }
+    }
     return {
       nextHop: '',
-      outInterface: sanitizeToken(match[1]),
+      outInterface: outInterface,
       kind: 'connected'
     };
   }
 
   function pathKey(path) {
-    return [path.kind || '', path.nextHop || '', path.outInterface || ''].join('|');
+    return [path.kind || '', path.nextHop || '', path.outInterface || '', path.adminDistance === null || path.adminDistance === undefined ? '' : path.adminDistance, path.metric === null || path.metric === undefined ? '' : path.metric].join('|');
+  }
+
+  function annotatePath(path, adminDistance, metric) {
+    if (!path) return path;
+    if (adminDistance !== null && adminDistance !== undefined && adminDistance !== '') path.adminDistance = Number(adminDistance);
+    if (metric !== null && metric !== undefined && metric !== '') path.metric = Number(metric);
+    return path;
   }
 
   function sortAndDedupePaths(paths) {
@@ -206,7 +260,9 @@
         output.push({
           nextHop: path.nextHop || '',
           outInterface: path.outInterface || '',
-          kind: path.kind || (path.nextHop ? 'via' : 'connected')
+          kind: path.kind || (path.nextHop ? 'via' : 'connected'),
+          adminDistance: path.adminDistance === undefined ? null : path.adminDistance,
+          metric: path.metric === undefined ? null : path.metric
         });
       }
     }
@@ -218,7 +274,7 @@
 
   function normalizeRoute(route) {
     route.paths = sortAndDedupePaths(route.paths || []);
-    route.key = [route.vrf, route.afi, route.prefix].join('|');
+    route.key = [route.vrf, route.afi, route.prefix, route.protocol, route.routeType].join('|');
     route.signature = JSON.stringify({
       protocol: route.protocol,
       routeType: route.routeType,
@@ -230,11 +286,137 @@
     return route;
   }
 
+  function makeRouteFromParts(vrf, afi, prefix, protocolToken, routeTypeToken, adminDistance, metric, paths, rawLine) {
+    var routeCode = parseRouteCode(protocolToken, routeTypeToken || '');
+    return normalizeRoute({
+      vrf: vrf || 'global',
+      afi: afi || detectAfi(prefix),
+      prefix: prefix,
+      protocol: routeCode.protocol,
+      routeType: routeCode.routeType,
+      adminDistance: adminDistance === '' || adminDistance === null || adminDistance === undefined ? null : Number(adminDistance),
+      metric: metric === '' || metric === null || metric === undefined ? null : Number(metric),
+      isDefaultCandidate: routeCode.isDefaultCandidate,
+      paths: paths || [],
+      rawLines: [rawLine]
+    });
+  }
+
+  function parsePathFromBareInterface(rest) {
+    if (/\bvia\b/i.test(rest) || /directly\s+connected/i.test(rest)) return null;
+    var match = String(rest || '').match(AD_METRIC_RE);
+    if (!match) return null;
+    var tail = String(rest || '').slice(String(rest || '').indexOf(match[0]) + match[0].length);
+    var parts = tail.split(',');
+    for (var i = parts.length - 1; i >= 0; i -= 1) {
+      var token = sanitizeToken(parts[i]);
+      if (looksLikeInterface(token)) return { nextHop: '', outInterface: token, kind: 'interface' };
+    }
+    return null;
+  }
+
+  function parsePathFromSummary(rest) {
+    if (!/is\s+a\s+summary/i.test(rest)) return null;
+    var parts = String(rest || '').split(',');
+    for (var i = parts.length - 1; i >= 0; i -= 1) {
+      var token = sanitizeToken(parts[i]);
+      if (looksLikeInterface(token)) return { nextHop: '', outInterface: token, kind: 'summary' };
+    }
+    return null;
+  }
+
+  function parsePathFromVpn(rest) {
+    var match = String(rest || '').match(/connected\s+by\s+VPN\s+\(advertised\),\s*(\S+)/i);
+    if (!match) return null;
+    return { nextHop: '', outInterface: sanitizeToken(match[1]), kind: 'vpn' };
+  }
+
+  function parseAsaNetmaskRoute(line, currentVrf) {
+    var match = String(line || '').match(/^\s*([A-Za-z])(?:\s|\*)\s*([A-Za-z0-9]{0,2})\s+(\S+)\s+((?:\d{1,3}\.){3}\d{1,3})(.*)$/);
+    if (!match) return null;
+    var prefix = normalizeNetworkAndMask(match[3], match[4]);
+    var rest = match[5] || '';
+    var adMetric = parseAdMetric(rest);
+    var connectedPath = parsePathFromConnected(rest);
+    var viaPath = parsePathFromVia(rest);
+    var barePath = parsePathFromBareInterface(rest);
+    var summaryPath = parsePathFromSummary(rest);
+    var vpnPath = parsePathFromVpn(rest);
+    var path = connectedPath || viaPath || barePath || summaryPath || vpnPath;
+    annotatePath(path, adMetric.adminDistance, adMetric.metric);
+    return makeRouteFromParts(currentVrf, 'ipv4', prefix, match[1], match[2] || '', adMetric.adminDistance, adMetric.metric, path ? [path] : [], line.trim());
+  }
+
+  function parseVpnContinuation(line) {
+    var match = String(line || '').match(/^\s*connected\s+by\s+VPN\s+\(advertised\),\s*(\S+)\s*$/i);
+    if (!match) return null;
+    return { nextHop: '', outInterface: sanitizeToken(match[1]), kind: 'vpn' };
+  }
+
+  function parseConnectedContinuation(line) {
+    if (!/^\s+is\s+directly\s+connected/i.test(String(line || ''))) return null;
+    var path = parsePathFromConnected(line);
+    return path && path.outInterface ? path : null;
+  }
+
+  function parseNxosPrefixHeader(line) {
+    var match = String(line || '').match(/^\s*((?:\d{1,3}\.){3}\d{1,3}\/\d{1,2}),\s+ubest\/mbest:/i);
+    return match ? match[1] : null;
+  }
+
+  function parseNxosRouteLine(line, currentVrf, pendingPrefix) {
+    if (!pendingPrefix) return null;
+    var match = String(line || '').match(/^\s*(?:\*+)?via\s+([^,]+)(?:,\s*([^\[,]+))?,\s*\[(\d+)\/(\d+)\],\s*([^,]+),\s*([^,\s]+)(?:,\s*([^,]+))?/i);
+    if (!match) return null;
+    var firstToken = sanitizeToken(match[1]);
+    var outInterface = sanitizeToken(match[2] || '');
+    var protocol = sanitizeToken(match[6]);
+    var routeType = sanitizeToken(match[7] || '');
+    if (/^tag\b/i.test(routeType)) routeType = '';
+    if (/^discard$/i.test(routeType)) routeType = '';
+    var nextHop = '';
+    var vrfSplit = firstToken.split('%');
+    firstToken = vrfSplit[0];
+    if (isIpAddress(firstToken)) {
+      nextHop = firstToken;
+    } else if (!outInterface) {
+      outInterface = firstToken;
+    }
+    var kind = nextHop ? 'via' : (/^Null/i.test(outInterface) ? 'discard' : 'interface');
+    return makeRouteFromParts(currentVrf, 'ipv4', pendingPrefix, protocol, routeType, match[3], match[4], [annotatePath({ nextHop: nextHop, outInterface: outInterface, kind: kind }, match[3], match[4])], line.trim());
+  }
+
+  function parseXrRouteEntryHeader(line) {
+    var match = String(line || '').match(/^\s*Routing\s+entry\s+for\s+((?:\d{1,3}\.){3}\d{1,3}\/\d{1,2})/i);
+    return match ? match[1] : null;
+  }
+
+  function parseXrKnownVia(line) {
+    var match = String(line || '').match(/^\s*Known\s+via\s+"([^"]+)",\s+distance\s+(\d+),\s+metric\s+(\d+)/i);
+    if (!match) return null;
+    return { protocol: match[1], adminDistance: Number(match[2]), metric: Number(match[3]) };
+  }
+
+  function parseXrDescriptorPath(line, currentVrf, xrEntry) {
+    if (!xrEntry || !xrEntry.prefix) return null;
+    var match = String(line || '').match(/^\s*((?:\d{1,3}\.){3}\d{1,3})(?:,\s+from\s+\S+)?(?:,\s+via\s+(\S+))?\s*$/i);
+    if (!match) return null;
+    var nextHop = match[1];
+    var outInterface = sanitizeToken(match[2] || '');
+    return makeRouteFromParts(currentVrf, 'ipv4', xrEntry.prefix, xrEntry.protocol || '', '', xrEntry.adminDistance, xrEntry.metric, [annotatePath({ nextHop: nextHop, outInterface: outInterface, kind: 'via' }, xrEntry.adminDistance, xrEntry.metric)], line.trim());
+  }
+
   function makeRoute(vrf, protocolToken, routeTypeToken, prefix, rest, rawLine, inheritedPrefixLength) {
     var adMetric = parseAdMetric(rest);
     var routeCode = parseRouteCode(protocolToken, routeTypeToken);
     var connectedPath = parsePathFromConnected(rest);
     var viaPath = parsePathFromVia(rest);
+    var barePath = parsePathFromBareInterface(rest);
+    var summaryPath = parsePathFromSummary(rest);
+    annotatePath(connectedPath, adMetric.adminDistance, adMetric.metric);
+    annotatePath(viaPath, adMetric.adminDistance, adMetric.metric);
+    annotatePath(barePath, adMetric.adminDistance, adMetric.metric);
+    annotatePath(summaryPath, adMetric.adminDistance, adMetric.metric);
     return normalizeRoute({
       vrf: vrf || 'global',
       afi: detectAfi(prefix),
@@ -244,7 +426,7 @@
       adminDistance: adMetric.adminDistance,
       metric: adMetric.metric,
       isDefaultCandidate: routeCode.isDefaultCandidate,
-      paths: connectedPath ? [connectedPath] : (viaPath ? [viaPath] : []),
+      paths: connectedPath ? [connectedPath] : (viaPath ? [viaPath] : (barePath ? [barePath] : (summaryPath ? [summaryPath] : []))),
       rawLines: [rawLine]
     });
   }
@@ -261,6 +443,7 @@
     var rest = 'via ' + match[3] + (match[4] || '');
     var path = parsePathFromVia(rest);
     if (!path) return null;
+    annotatePath(path, match[1] ? Number(match[1]) : null, match[2] ? Number(match[2]) : null);
     return {
       adminDistance: match[1] ? Number(match[1]) : null,
       metric: match[2] ? Number(match[2]) : null,
@@ -289,6 +472,8 @@
     var warnings = [];
     var lastRoute = null;
     var inheritedPrefixLength = null;
+    var pendingNxosPrefix = null;
+    var xrEntry = null;
     var lines = String(text || '').split(/\n/);
 
     for (var index = 0; index < lines.length; index += 1) {
@@ -300,6 +485,8 @@
         currentVrf = commandVrf;
         lastRoute = null;
         inheritedPrefixLength = null;
+        pendingNxosPrefix = null;
+        xrEntry = null;
         continue;
       }
       var headerVrf = parseVrfHeader(line);
@@ -307,6 +494,28 @@
         currentVrf = headerVrf;
         lastRoute = null;
         inheritedPrefixLength = null;
+        pendingNxosPrefix = null;
+        xrEntry = null;
+        continue;
+      }
+      var xrPrefix = parseXrRouteEntryHeader(line);
+      if (xrPrefix) {
+        xrEntry = { prefix: xrPrefix, protocol: '', adminDistance: null, metric: null };
+        lastRoute = null;
+        continue;
+      }
+      var xrKnown = parseXrKnownVia(line);
+      if (xrKnown && xrEntry) {
+        xrEntry.protocol = xrKnown.protocol;
+        xrEntry.adminDistance = xrKnown.adminDistance;
+        xrEntry.metric = xrKnown.metric;
+        continue;
+      }
+      var nxosPrefix = parseNxosPrefixHeader(line);
+      if (nxosPrefix) {
+        pendingNxosPrefix = nxosPrefix;
+        lastRoute = null;
+        xrEntry = null;
         continue;
       }
       var subnetPrefixLength = parseSubnetHeader(line);
@@ -316,6 +525,51 @@
         continue;
       }
       if (isIgnorableLine(line)) continue;
+
+      var xrDescriptorRoute = parseXrDescriptorPath(line, currentVrf, xrEntry);
+      if (xrDescriptorRoute) {
+        routes.push(xrDescriptorRoute);
+        lastRoute = xrDescriptorRoute;
+        continue;
+      }
+
+      var nxosRoute = parseNxosRouteLine(line, currentVrf, pendingNxosPrefix);
+      if (nxosRoute) {
+        routes.push(nxosRoute);
+        lastRoute = nxosRoute;
+        continue;
+      }
+
+      var asaRoute = parseAsaNetmaskRoute(line, currentVrf);
+      if (asaRoute) {
+        routes.push(asaRoute);
+        lastRoute = asaRoute;
+        continue;
+      }
+
+      var vpnPath = parseVpnContinuation(line);
+      if (vpnPath) {
+        if (!lastRoute) {
+          warnings.push({ line: lineNumber, message: 'VPN continuation without previous prefix', content: line.trim() });
+          continue;
+        }
+        lastRoute.rawLines.push(line.trim());
+        lastRoute.paths.push(vpnPath);
+        normalizeRoute(lastRoute);
+        continue;
+      }
+
+      var connectedContinuation = parseConnectedContinuation(line);
+      if (connectedContinuation) {
+        if (!lastRoute) {
+          warnings.push({ line: lineNumber, message: 'Connected continuation without previous prefix', content: line.trim() });
+          continue;
+        }
+        lastRoute.rawLines.push(line.trim());
+        lastRoute.paths.push(connectedContinuation);
+        normalizeRoute(lastRoute);
+        continue;
+      }
 
       var route = parseRouteLine(line, currentVrf, inheritedPrefixLength);
       if (route) {
@@ -368,6 +622,8 @@
     if (!path) return '-';
     if ((path.kind || '') === 'connected') return 'connected ' + (path.outInterface || '');
     if ((path.kind || '') === 'receive') return 'receive ' + (path.outInterface || '');
+    if ((path.kind || '') === 'vpn') return 'VPN ' + (path.outInterface || '');
+    if ((path.kind || '') === 'discard') return 'discard ' + (path.outInterface || '');
     if ((path.kind || '') === 'interface') return 'via ' + (path.outInterface || '-');
     return 'via ' + (path.nextHop || '-') + (path.outInterface ? ' ' + path.outInterface : '');
   }

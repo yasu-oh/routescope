@@ -2,7 +2,7 @@
   'use strict';
 
   function routeKey(route) {
-    return [route.vrf, route.afi, route.prefix].join('|');
+    return [route.vrf, route.afi, route.prefix, route.protocol, route.routeType].join('|');
   }
 
   function buildMap(routes) {

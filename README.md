@@ -20,13 +20,13 @@ https://yasu-oh.github.io/routescope/
 
 ## Supported input
 
-* Cisco IOS / IOS-XE の基本的な `show ip route` および `show ipv6 route`
+* Cisco IOS / IOS-XE / NX-OS / XR-OS / ASA の基本的な経路情報
+* `show ip route` / `show ipv6 route`
 * `show ip route vrf <VRF名>` / `show ipv6 route vrf <VRF名>`
 * `show ip route vrf all` / `show ipv6 route vrf all`
 * `show ip route vrf *` / `show ipv6 route vrf *`
 * `DEVICE#show ip route vrf *` のようなプロンプト付き出力
 * `DEVICE#show p ip route vrf *` のような省略コマンドのプロンプト付き出力
-* NX-OS 風の `IP Route Table for VRF "<name>"` ヘッダ
 * IPv4 / IPv6 経路（基本的な一行形式）
 * Cisco IOS の `x.x.x.x/<len> is subnetted` 親行に続く `/prefixlen` 省略経路
 

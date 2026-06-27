@@ -5,12 +5,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="RouteScope is a Cisco IPv4/IPv6 route semantic diff tool that runs entirely in the browser.">
   <title>RouteScope</title>
-  <link rel="stylesheet" href="style.css">
+  <script>
+    (function () {
+      var version = String(Date.now());
+      window.ROUTESCOPE_ASSET_VERSION = version;
+      document.write('<link rel="stylesheet" href="style.css?v=' + encodeURIComponent(version) + '">');
+    }());
+  </script>
 </head>
 <body>
   <header class="hero">
     <h1>RouteScope</h1>
-    <p class="hero-text">Cisco IOS / IOS-XE / NX-OS の基本的な IPv4 / IPv6 経路表を構造化し、VRF・prefix・protocol・AD/metric・next-hop/interface 単位で比較します。</p>
+    <p class="hero-text">Cisco IOS / IOS-XE / NX-OS / XR-OS / ASA の基本的な IPv4 / IPv6 経路表を構造化し、VRF・prefix・protocol・AD/metric・next-hop/interface 単位で比較します。</p>
     <div class="privacy-note" role="note"><span aria-hidden="true">入力データはブラウザ内だけで処理されます。サーバ送信、外部API、analytics、CDN、自動保存は使いません。</span></div>
   </header>
 
@@ -107,8 +113,13 @@
     <span>Built by <a href="https://github.com/yasu-oh" target="_blank" rel="noopener noreferrer">yasu-oh</a>.</span>
   </footer>
 
-  <script src="parser.js"></script>
-  <script src="diff.js"></script>
-  <script src="app.js"></script>
+  <script>
+    (function () {
+      var version = encodeURIComponent(window.ROUTESCOPE_ASSET_VERSION || String(Date.now()));
+      ['parser.js', 'diff.js', 'app.js'].forEach(function (src) {
+        document.write('<script src="' + src + '?v=' + version + '"><\/script>');
+      });
+    }());
+  </script>
 </body>
 </html>
