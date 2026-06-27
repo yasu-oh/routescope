@@ -76,7 +76,7 @@
   function inferClassfulPrefixLength(address) {
     var firstOctet = Number(String(address || '').split('.')[0]);
     if (firstOctet === 0) return 0;
-    if (firstOctet >= 1 && firstOctet <= 126) return 8;
+    if (firstOctet >= 1 && firstOctet <= 127) return 8;
     if (firstOctet >= 128 && firstOctet <= 191) return 16;
     if (firstOctet >= 192 && firstOctet <= 223) return 24;
     return 32;
