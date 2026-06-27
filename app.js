@@ -24,11 +24,14 @@
     'O    198.51.100.0/24 [110/20] via 192.0.2.1, 00:01:23, Vlan10\n' +
     'O    198.51.100.128/25 [110/20] via 192.0.2.1, 00:01:23, Vlan10\n' +
     '                     [110/20] via 192.0.2.2, 00:01:23, Vlan20\n' +
+    'S    203.0.113.0/24 [1/0] via 192.0.2.10, Vlan10\n' +
+    'O E1 203.0.113.64/26 [110/20] via 192.0.2.30, 00:02:00, Vlan30\n' +
+    'S    203.0.113.128/25 [1/0] via 192.0.2.40, Vlan40\n' +
+    'O    203.0.113.192/26 [110/20] via 192.0.2.50, 00:03:00, Vlan50\n' +
     'Routing Table: CUSTOMER_A\n' +
-    'O IA 203.0.113.0/24 [110/30] via 198.51.100.1, 00:02:10, Vlan30\n' +
-    'B    203.0.113.128/25 [20/0] via 203.0.113.1, 00:10:00\n' +
+    'O IA 10.10.0.0/24 [110/30] via 198.51.100.1, 00:02:10, Vlan30\n' +
     'Routing Table: CUSTOMER_B\n' +
-    'S    198.51.100.64/26 [1/0] via 198.51.100.254\n';
+    'S    10.20.0.0/24 [1/0] via 198.51.100.254\n';
 
   var SAMPLE_AFTER =     'show ip route vrf all\n' +
     'Routing Table: global\n' +
@@ -38,12 +41,16 @@
     'O    198.51.100.0/24 [110/30] via 192.0.2.1, 00:09:23, Vlan10\n' +
     'O    198.51.100.128/25 [110/20] via 192.0.2.2, 00:11:23, Vlan20\n' +
     '                     [110/20] via 192.0.2.3, 00:11:23, Vlan30\n' +
-    'O E2 203.0.113.64/26 [110/20] via 192.0.2.3, 00:05:00, Vlan30\n' +
+    'B    203.0.113.0/24 [20/0] via 192.0.2.20, 00:05:00, Vlan20\n' +
+    'O E2 203.0.113.64/26 [110/20] via 192.0.2.30, 00:05:00, Vlan30\n' +
+    'S    203.0.113.128/25 [1/0] via 192.0.2.40, Vlan40\n' +
+    'B    203.0.113.160/27 [20/0] via 192.0.2.41, 00:05:00, Vlan41\n' +
+    'O E2 198.51.100.64/26 [110/20] via 192.0.2.60, 00:05:00, Vlan60\n' +
     'Routing Table: CUSTOMER_A\n' +
-    'O IA 203.0.113.0/24 [110/30] via 198.51.100.1, 4d12h, Vlan30\n' +
+    'O IA 10.10.0.0/24 [110/30] via 198.51.100.1, 4d12h, Vlan30\n' +
     'Routing Table: CUSTOMER_B\n' +
-    'S    198.51.100.64/26 [1/0] via 198.51.100.254\n' +
-    'S    198.51.100.192/26 [1/0] via 198.51.100.253\n';
+    'S    10.20.0.0/24 [1/0] via 198.51.100.254\n' +
+    'S    10.20.1.0/24 [1/0] via 198.51.100.253\n';
 
   function $(id) {
     return document.getElementById(id);
@@ -124,6 +131,15 @@
     return false;
   }
 
+  function matchesProtocol(item, protocol) {
+    if (protocol === 'all') return true;
+    var routes = [item.before, item.after].filter(Boolean);
+    for (var i = 0; i < routes.length; i += 1) {
+      if (routes[i].protocol === protocol) return true;
+    }
+    return false;
+  }
+
   function filteredResults() {
     if (!state.diff) return [];
     readFilters();
@@ -131,7 +147,7 @@
       if (state.filters.vrf !== 'all' && item.vrf !== state.filters.vrf) return false;
       if (state.filters.type === 'non-unchanged' && item.type === 'unchanged') return false;
       if (state.filters.type !== 'all' && state.filters.type !== 'non-unchanged' && item.type !== state.filters.type) return false;
-      if (state.filters.protocol !== 'all' && item.protocol !== state.filters.protocol) return false;
+      if (!matchesProtocol(item, state.filters.protocol)) return false;
       if (!matchesRouteSearch(item, 'prefix', state.filters.prefix)) return false;
       if (!matchesRouteSearch(item, 'nextHop', state.filters.nextHop)) return false;
       if (!matchesRouteSearch(item, 'iface', state.filters.iface)) return false;
