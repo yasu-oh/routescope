@@ -246,6 +246,30 @@ table {
   min-width: 0;
 }
 
+#vrfSummaryBody td:nth-child(2) {
+  color: var(--added);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+#vrfSummaryBody td:nth-child(3) {
+  color: var(--removed);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+#vrfSummaryBody td:nth-child(4) {
+  color: var(--changed);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+#vrfSummaryBody td:nth-child(5) {
+  color: var(--unchanged);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
 th, td {
   padding: 11px 12px;
   border-bottom: 1px solid var(--line);
