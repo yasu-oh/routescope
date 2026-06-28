@@ -10,9 +10,9 @@
   --line-strong: #8799ad;
   --accent: #49ff8a;
   --accent-dark: #20d66b;
-  --added: #57ff8d;
-  --removed: #ff6b6b;
-  --changed: #ffe66d;
+  --added: #14d058;
+  --removed: #f03e3e;
+  --changed: #e5b800;
   --unchanged: #c8d2de;
   --shadow: 0 10px 34px rgba(0, 0, 0, 0.46);
   font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
@@ -223,6 +223,12 @@ button.secondary:hover { border-color: var(--accent); color: var(--accent); }
   color: var(--accent);
 }
 
+.metrics .metric:nth-child(2) strong { color: var(--added); }
+.metrics .metric:nth-child(3) strong { color: var(--removed); }
+.metrics .metric:nth-child(4) strong { color: var(--changed); }
+.metrics .metric:nth-child(5) strong { color: var(--unchanged); }
+.metrics .metric:nth-child(6) strong { color: var(--muted); }
+
 .table-wrap {
   overflow-x: auto;
   border: 1px solid var(--line-strong);
@@ -279,14 +285,20 @@ code {
 
 .badge {
   display: inline-block;
-  border-radius: 2px;
-  padding: 2px 6px;
-  font-size: 0.78rem;
-  font-weight: 800;
+  border-radius: 3px;
+  padding: 4px 9px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  line-height: 1.2;
+  -webkit-text-stroke: 0.45px currentColor;
+  paint-order: stroke fill;
 }
-.badge-added { color: #000; background: var(--added); }
-.badge-removed { color: #000; background: var(--removed); }
-.badge-changed { color: #000; background: var(--changed); }
+
+.badge-added { color: #001a08; background: var(--added); }
+.badge-removed { color: #2a0000; background: var(--removed); }
+.badge-changed { color: #1a1400; background: var(--changed); }
 .badge-unchanged { color: #000; background: var(--unchanged); }
 
 details {
